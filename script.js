@@ -250,27 +250,201 @@ downloadWordBtn.addEventListener('click', async () => {
     loadingSpinner.classList.remove('hidden');
     
     try {
+        console.log('Starting Word to PDF conversion...');
+        
+        // Step 1: Read the file
+        console.log('Reading Word file...');
         const arrayBuffer = await selectedWordFile.arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer });
         
-        // Create PDF from HTML content
-        const pdfDoc = await PDFLib.PDFDocument.create();
-        const page = pdfDoc.addPage();
-        
-        // Add the HTML content as text (simplified version)
-        const { width, height } = page.getSize();
-        page.drawText(result.value, {
-            x: 50,
-            y: height - 50,
-            size: 12,
-            maxWidth: width - 100,
+        // Step 2: Convert to HTML with style information
+        console.log('Converting to HTML...');
+        const result = await mammoth.convertToHtml({ 
+            arrayBuffer,
+            styleMap: [
+                "p[style-name='Heading 1'] => h1:fresh",
+                "p[style-name='Heading 2'] => h2:fresh",
+                "p[style-name='Heading 3'] => h3:fresh",
+                "b => strong",
+                "i => em",
+                "u => u",
+                "strike => s",
+                "p => p:fresh"
+            ],
+            transformDocument: (element) => {
+                if (element.type === 'text') {
+                    element.value = element.value
+                        .replace(/\t/g, '    ')
+                        .replace(/\u00A0/g, ' ')
+                        .replace(/\r\n/g, '\n')
+                        .replace(/\r/g, '\n');
+                }
+                return element;
+            }
         });
         
+        if (!result.value) {
+            throw new Error('No content generated from Word file');
+        }
+
+        // Step 3: Create PDF
+        console.log('Creating PDF document...');
+        const pdfDoc = await PDFLib.PDFDocument.create();
+        
+        // Step 4: Add page
+        console.log('Adding page...');
+        const page = pdfDoc.addPage([595.28, 841.89]); // A4 size
+        
+        // Step 5: Set up text formatting
+        console.log('Setting up text formatting...');
+        const { width, height } = page.getSize();
+        const baseFontSize = 12;
+        const lineHeight = baseFontSize * 1.2;
+        const margin = 50;
+        const maxWidth = width - (margin * 2);
+        
+        // Step 6: Embed fonts
+        console.log('Embedding fonts...');
+        // Use a font that supports Unicode characters
+        const regularFont = await pdfDoc.embedFont(PDFLib.StandardFonts.TimesRoman);
+        const boldFont = await pdfDoc.embedFont(PDFLib.StandardFonts.TimesRomanBold);
+        const italicFont = await pdfDoc.embedFont(PDFLib.StandardFonts.TimesRomanItalic);
+        
+        // Step 7: Process content
+        console.log('Processing content...');
+        
+        // Create a temporary div to parse HTML
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = result.value;
+        
+        let y = height - margin;
+        let currentPage = page;
+
+        // Function to process element
+        function processElement(element, x = margin, fontSize = baseFontSize, isBold = false, isItalic = false) {
+            const lines = [];
+            
+            // Handle different element types
+            switch (element.tagName.toLowerCase()) {
+                case 'h1':
+                    fontSize = baseFontSize * 1.5;
+                    isBold = true;
+                    break;
+                case 'h2':
+                    fontSize = baseFontSize * 1.3;
+                    isBold = true;
+                    break;
+                case 'h3':
+                    fontSize = baseFontSize * 1.1;
+                    isBold = true;
+                    break;
+                case 'strong':
+                case 'b':
+                    isBold = true;
+                    break;
+                case 'em':
+                case 'i':
+                    isItalic = true;
+                    break;
+                case 'p':
+                    // Check for indentation
+                    const style = window.getComputedStyle(element);
+                    const textIndent = parseInt(style.textIndent) || 0;
+                    const paddingLeft = parseInt(style.paddingLeft) || 0;
+                    x = x + textIndent + paddingLeft;
+                    break;
+            }
+            
+            // Process text content
+            if (element.nodeType === Node.TEXT_NODE) {
+                const textLines = processTextWithStyles(element, x, fontSize, isBold, isItalic);
+                lines.push(...textLines);
+            } else {
+                // Process child elements
+                for (const child of element.childNodes) {
+                    if (child.nodeType === Node.TEXT_NODE) {
+                        const textLines = processTextWithStyles(child, x, fontSize, isBold, isItalic);
+                        lines.push(...textLines);
+                    } else if (child.nodeType === Node.ELEMENT_NODE) {
+                        const childLines = processElement(child, x, fontSize, isBold, isItalic);
+                        lines.push(...childLines);
+                    }
+                }
+            }
+            
+            return lines;
+        }
+
+        // Function to process text with styles
+        function processTextWithStyles(element, x, fontSize, isBold = false, isItalic = false) {
+            const font = isBold ? boldFont : (isItalic ? italicFont : regularFont);
+            // Replace tab characters with spaces and clean up the text
+            const text = element.textContent
+                .replace(/\t/g, '    ') // Replace tabs with 4 spaces
+                .replace(/\u00A0/g, ' ') // Replace non-breaking spaces with regular spaces
+                .replace(/\r\n/g, '\n') // Normalize line endings
+                .replace(/\r/g, '\n')
+                .replace(/→/g, '->') // Replace arrow with ASCII alternative
+                .replace(/[^\x00-\x7F]/g, '') // Remove any remaining non-ASCII characters
+                .trim();
+            
+            if (!text) return [];
+            
+            const words = text.split(/\s+/).filter(word => word.length > 0);
+            let line = '';
+            let lines = [];
+            
+            for (const word of words) {
+                const testLine = line + (line ? ' ' : '') + word;
+                const lineWidth = font.widthOfTextAtSize(testLine, fontSize);
+                
+                if (lineWidth > maxWidth - (x - margin)) {
+                    lines.push({ text: line, x, font, fontSize });
+                    line = word;
+                } else {
+                    line = testLine;
+                }
+            }
+            if (line) {
+                lines.push({ text: line, x, font, fontSize });
+            }
+            
+            return lines;
+        }
+
+        // Process all elements
+        const allLines = processElement(tempDiv);
+        
+        // Step 8: Draw content
+        console.log('Drawing content...');
+        for (const line of allLines) {
+            if (y < margin) {
+                console.log('Adding new page...');
+                currentPage = pdfDoc.addPage([595.28, 841.89]);
+                y = height - margin;
+            }
+            
+            currentPage.drawText(line.text, {
+                x: line.x,
+                y: y,
+                size: line.fontSize,
+                font: line.font,
+            });
+            
+            y -= lineHeight * (line.fontSize / baseFontSize);
+        }
+        
+        // Step 9: Save PDF
+        console.log('Saving PDF...');
         const pdfBytes = await pdfDoc.save();
+        
+        // Step 10: Download
+        console.log('Downloading PDF...');
         downloadPDF(pdfBytes, 'converted-document.pdf');
+        
+        console.log('Conversion completed successfully!');
     } catch (error) {
-        console.error('Error converting Word to PDF:', error);
-        alert('Error converting Word to PDF. Please try again.');
+        console.error('Detailed conversion error:', error);
+        alert(`Error converting Word to PDF: ${error.message}`);
     } finally {
         loadingSpinner.classList.add('hidden');
     }
