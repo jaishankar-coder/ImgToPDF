@@ -93,6 +93,32 @@ const loadingSpinner = document.getElementById('loadingSpinner');
 
 let selectedWordFile = null;
 
+// Word preview zoom controls
+const zoomIn = document.getElementById('zoomIn');
+const zoomOut = document.getElementById('zoomOut');
+const zoomLevel = document.getElementById('zoomLevel');
+
+let currentZoom = 80; // Start at 80% zoom
+
+function updateZoom() {
+    wordPreview.style.transform = `scale(${currentZoom / 100})`;
+    zoomLevel.textContent = `${currentZoom}%`;
+}
+
+zoomIn.addEventListener('click', () => {
+    if (currentZoom < 200) {
+        currentZoom += 20;
+        updateZoom();
+    }
+});
+
+zoomOut.addEventListener('click', () => {
+    if (currentZoom > 40) {
+        currentZoom -= 20;
+        updateZoom();
+    }
+});
+
 // Drag and drop handlers for Word files
 wordDropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -126,6 +152,10 @@ wordFileInput.addEventListener('change', (e) => {
 function handleWordFile(file) {
     selectedWordFile = file;
     downloadWordBtn.disabled = false;
+    
+    // Reset zoom level
+    currentZoom = 80;
+    updateZoom();
     
     // Preview Word content
     const reader = new FileReader();
