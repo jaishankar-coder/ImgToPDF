@@ -75,6 +75,7 @@ h2 {
     padding: 1.5rem;
     margin-bottom: 2rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    position: relative;
 }
 
 .image-preview {
@@ -247,9 +248,14 @@ h2 {
     padding: 1rem;
     min-height: 200px;
     max-height: 400px;
-    overflow-y: auto;
+    overflow: auto;
+    position: relative;
+}
+
+.word-preview-content {
     transform-origin: top left;
-    transform: scale(0.8);
+    min-width: 100%;
+    padding: 1rem;
 }
 
 .word-preview img {

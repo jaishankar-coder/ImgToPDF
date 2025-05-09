@@ -101,7 +101,19 @@ const zoomLevel = document.getElementById('zoomLevel');
 let currentZoom = 80; // Start at 80% zoom
 
 function updateZoom() {
-    wordPreview.style.transform = `scale(${currentZoom / 100})`;
+    // Create content wrapper if it doesn't exist
+    let contentWrapper = wordPreview.querySelector('.word-preview-content');
+    if (!contentWrapper) {
+        contentWrapper = document.createElement('div');
+        contentWrapper.className = 'word-preview-content';
+        // Move all child nodes to the wrapper
+        while (wordPreview.firstChild) {
+            contentWrapper.appendChild(wordPreview.firstChild);
+        }
+        wordPreview.appendChild(contentWrapper);
+    }
+    
+    contentWrapper.style.transform = `scale(${currentZoom / 100})`;
     zoomLevel.textContent = `${currentZoom}%`;
 }
 
@@ -155,7 +167,6 @@ function handleWordFile(file) {
     
     // Reset zoom level
     currentZoom = 80;
-    updateZoom();
     
     // Preview Word content
     const reader = new FileReader();
@@ -163,7 +174,18 @@ function handleWordFile(file) {
         try {
             const arrayBuffer = e.target.result;
             const result = await mammoth.convertToHtml({ arrayBuffer });
-            wordPreview.innerHTML = result.value;
+            
+            // Create content wrapper
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = 'word-preview-content';
+            contentWrapper.innerHTML = result.value;
+            
+            // Clear and update preview
+            wordPreview.innerHTML = '';
+            wordPreview.appendChild(contentWrapper);
+            
+            // Apply initial zoom
+            updateZoom();
         } catch (error) {
             console.error('Error previewing Word file:', error);
             wordPreview.innerHTML = '<p>Error previewing Word file. Please try again.</p>';
